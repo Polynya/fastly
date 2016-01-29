@@ -1,18 +1,14 @@
 <?php
 /**
  * @file
- * This is the GlobalRedirect admin include which provides an interface to global redirect to change some of the default settings
- * Contains \Drupal\globalredirect\Form\GlobalredirectSettingsForm.
+ * Contains Drupal\fastly\Form\FastlySettingsForm.
  */
 
 namespace Drupal\fastly\Form;
 
-use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
-use Drupal\Fastly\Api;
-use GuzzleHttp\Exception\RequestException;
-use Symfony\Component\DependencyInjection\ContainerInterface;
+
 
 /**
  * Defines a form to configure module settings.
@@ -22,7 +18,15 @@ class FastlySettingsForm extends ConfigFormBase {
   /**
    * {@inheritdoc}
    */
-  public function getFormID() {
+  public function __construct(\Drupal\Core\Config\ConfigFactoryInterface $config_factory) {
+    parent::__construct($config_factory);
+    $this->api = \Drupal::service('fastly.api');
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getFormId() {
     return 'fastly_settings';
   }
 
@@ -39,53 +43,47 @@ class FastlySettingsForm extends ConfigFormBase {
   public function buildForm(array $form, FormStateInterface $form_state) {
     $config = $this->config('fastly.settings');
 
-    $api_key = count($form_state->getValues()) ? $form_state->getValue('api_key') : $config->get('api_key');
+    $api_key = $config->get('api_key');
     $form['api_key'] = array(
       '#type' => 'textfield',
       '#title' => $this->t('API key'),
       '#default_value' => $api_key,
       '#required' => TRUE,
-      // Update the listed services whenever the API key is modified.
-      '#ajax' => array(
-        'callback' => '::updateServices',
-        'wrapper' => 'edit-service-wrapper',
-      ),
     );
 
     $service_options = $this->getServiceOptions($api_key);
-    $form['service_id'] = array(
-      '#type' => 'select',
-      '#title' => $this->t('Service'),
-      '#options' => $service_options,
-      '#default_value' => $config->get('service_id'),
-      '#required' => TRUE,
-      '#description' => t('A Service represents the configuration for your website to be served through Fastly.'),
-      // Hide while no API key is set.
-      '#states' => [
-        'invisible' => [
-          'input[name="api_key"]' => ['empty' => TRUE],
-        ],
-      ],
-      '#prefix' => '<div id="edit-service-wrapper">',
-      '#suffix' => '</div>',
-    );
+    if ($service_options) {
+      $form['service_id'] = array(
+        '#type' => 'select',
+        '#title' => $this->t('Service'),
+        '#options' => $service_options,
+        '#default_value' => !empty($service_options) ? $config->get('service_id') : '',
+        '#description' => t('A Service represents the configuration for your website to be served through Fastly.'),
+        '#required' => TRUE,
+      );
+    }
 
     return parent::buildForm($form, $form_state);
-  }
-
-  /**
-   * Handles changing the API key.
-   */
-  public function updateServices($form, FormStateInterface $form_state) {
-    return $form['service_id'];
   }
 
   /**
    * {@inheritdoc}
    */
   public function validateForm(array &$form, FormStateInterface $form_state) {
-    if (!$this->isValidApiKey($form_state->getValue('api_key'))) {
+    $api_key = $form_state->getValue('api_key');
+    if (!$this->isValidApiKey($api_key)) {
       $form_state->setErrorByName('api_key', $this->t('Invalid API key.'));
+    }
+    $service_id = $form_state->getValue('service_id');
+    $service_options = $this->getServiceOptions($form_state->getValue('api_key'));
+    if (empty($service_id)) {
+      if (!($service_options)) {
+        $form_state->setErrorByName('api_key', $this->t('API key is valid but no services exist.'));
+      }
+      $form_state->setValue('service_id', key($service_options));
+    }
+    elseif (!in_array($service_id, array_keys($service_options))) {
+      $form_state->setErrorByName('api_key', $this->t('API key is valid but no services exist.'));
     }
   }
 
@@ -101,41 +99,50 @@ class FastlySettingsForm extends ConfigFormBase {
     parent::submitForm($form, $form_state);
   }
 
+  /**
+   * Get services from Fastly.
+   *
+   * @param string $api_key
+   *   API key.
+   *
+   * @return array
+   *   Id => name.
+   */
   protected function getServiceOptions($api_key) {
     if (!$this->isValidApiKey($api_key)) {
       return [];
     }
-
-    $request = \Drupal::httpClient()->createRequest('GET', 'https://api.fastly.com/'. 'service');
-    $request->addHeader('Fastly-Key', $api_key);
-    $response = \Drupal::httpClient()->send($request);
-    $services = $response->json();
-
-    $service_options = [];
-    foreach ($services as $service) {
-      $service_options[$service['id']] = $service['name'];
+    try {
+      $this->api->setApiKey($api_key);
+      $services = $this->api->getServices();
+      $service_options = [];
+      foreach ($services as $service) {
+        $service_options[$service->id] = $service->name;
+      }
+      ksort($service_options);
+      return $service_options;
     }
-    ksort($service_options);
-    return $service_options;
+    catch (\Exception $e) {
+      drupal_set_message($e->getMessage(), 'error');
+      return [];
+    }
   }
 
+  /**
+   * Checks if API key valid.
+   *
+   * @param string $api_key
+   *   API key.
+   *
+   * @return bool
+   *   TRUE if API key is validated by Fastly.
+   */
   protected function isValidApiKey($api_key) {
     if (empty($api_key)) {
       return FALSE;
     }
-
-    $request = \Drupal::httpClient()->createRequest('GET', 'https://api.fastly.com/'. 'current_customer');
-    $request->addHeader('Fastly-Key', $api_key);
-    try {
-      $response = \Drupal::httpClient()->send($request);
-      if ($response->getStatusCode() === 200) {
-        return TRUE;
-      }
-      return FALSE;
-    }
-    catch (RequestException $e) {
-      return FALSE;
-    }
+    $this->api->setApiKey($api_key);
+    return $this->api->validateApiKey();
   }
 
 }

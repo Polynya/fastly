@@ -11,7 +11,9 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpKernel\Event\FilterResponseEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
-
+/**
+ * SurrogateKeyGenerator class.
+ */
 class SurrogateKeyGenerator implements EventSubscriberInterface {
 
   /**

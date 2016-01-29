@@ -48,13 +48,32 @@ class Api {
   }
 
   /**
-   * Used to validate API key and service ID.
+   * Set API key.
+   *
+   * @paran string $api_key
+   *  API key.
+   */
+  public function setApiKey($api_key) {
+    $this->apiKey = $api_key;
+  }
+
+  /**
+   * Used to validate API key.
    *
    * @return bool
    *   FALSE if any corrupt data is passed.
    */
-  public function validate() {
-    return $this->query('current_customer')->status_message == 'OK';
+  public function validateApiKey() {
+    try {
+      $response = $this->query('current_customer');
+      if ($response->getStatusCode() != 200) {
+        return FALSE;
+      }
+      $json = $this->json($response);
+      return !empty($json->owner_id);
+    } catch (\Exception $e) {
+      return FALSE;
+    }
   }
 
   /**
@@ -62,14 +81,28 @@ class Api {
    */
   public function getServices() {
     $response = $this->query('service');
-    return $response->json();
+    return $this->json($response);
   }
 
   /**
    * Purge whole service.
    */
   public function purgeAll() {
-    $this->query('service/' . $this->service_id . '/purge_all', array(), 'POST');
+    try {
+      $response = $this->query('service/' . $this->serviceId . '/purge_all', array(), 'POST');
+
+      $result = $this->json($response);
+      if ($result->status === 'ok') {
+        $this->logger->info('Successfully purged all on Fastly.');
+      }
+      else {
+        $this->logger->critical('Unable to purge all on Fastly. Response status: %status.', [
+          '%status' => $result['status'],
+        ]);
+      }
+    } catch (RequestException $e) {
+      $this->logger->critical($e->getMessage());
+    }
   }
 
   /**
@@ -104,16 +137,23 @@ class Api {
     try {
       $response = $this->query('service/' . $this->serviceId . '/purge/' . $key, [], 'POST');
 
-      $result = $response->json();
-      if ($result['status'] === 'ok') {
-        $this->logger->info('Successfully purged the key %key. Purge ID: %id.', ['%key' => $key, '%id' => $result['id']]);
+      $result = $this->json($response);
+      if ($result->status === 'ok') {
+        $this->logger->info('Successfully purged the key %key. Purge ID: %id.', [
+          '%key' => $key,
+          '%id' => $result->id,
+        ]);
       }
       else {
-        $this->logger->critical('Unable to purge the key %key was purged from Fastly. Response status: %status. Purge ID: %id.', ['%key' => $key, '%status' => $result['status'], '%id' => $result['id']]);
+        $this->logger->critical('Unable to purge the key %key was purged from Fastly. Response status: %status. Purge ID: %id.', [
+          '%key' => $key,
+          '%status' => $result->status,
+          '%id' => $result->id,
+        ]);
       }
     }
     catch (RequestException $e) {
-//      $this->logger->critical($e->getMessage());
+      $this->logger->critical($e->getMessage());
     }
   }
 
@@ -129,17 +169,49 @@ class Api {
    * @param array $headers
    *   (optional) An array of headers to send with the request.
    *
-   * @return \GuzzleHttp\Message\ResponseInterface
+   * @return \Psr\Http\Message\ResponseInterface
+   *   Response.
    *
    * @throws \GuzzleHttp\Exception\RequestException
+   *   RequestException.
    */
   protected function query($uri, $data = array(), $method = 'GET', $headers = array()) {
-    $request = $this->httpClient->createRequest($method, $this->host . $uri, $data);
-    $request->addHeaders($headers);
-    if ($this->apiKey) {
-      $request->addHeader('Fastly-Key', $this->apiKey);
-    }
+    try {
+      if (empty($data['headers'])) {
+        $data['headers'] = $headers;
+        $data['headers']['Accept'] = 'application/json';
+        $data['headers']['Fastly-Key'] = $this->apiKey;
+      }
+      switch (strtoupper($method)) {
+        case 'GET':
+          return $this->httpClient->get($this->host . $uri, $data);
 
-    return $this->httpClient->send($request);
+        case 'POST':
+          return $this->httpClient->post($this->host . $uri, $data);
+
+        default:
+          throw new \Exception('Method :method is not valid for Fastly service.', [
+            ':method' => $method,
+          ]);
+      }
+    }
+    catch (\Exception $e) {
+      $this->logger->critical($e->getMessage());
+    }
+    return new \GuzzleHttp\Psr7\Response();
   }
+
+  /**
+   * Get JSON from response.
+   *
+   * @param \Psr\Http\Message\ResponseInterface $response
+   *   Response.
+   *
+   * @return \stdClass
+   *   JSON object.
+   */
+  public function json(\Psr\Http\Message\ResponseInterface $response) {
+    return json_decode($response->getBody());
+  }
+
 }
