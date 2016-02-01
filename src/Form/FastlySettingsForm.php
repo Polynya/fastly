@@ -16,11 +16,18 @@ use Drupal\Core\Form\FormStateInterface;
 class FastlySettingsForm extends ConfigFormBase {
 
   /**
+   * The Fastly API.
+   *
+   * @var \Drupal\Fastly\Api
+   */
+  protected $fastlyApi;
+
+  /**
    * {@inheritdoc}
    */
   public function __construct(\Drupal\Core\Config\ConfigFactoryInterface $config_factory) {
     parent::__construct($config_factory);
-    $this->api = \Drupal::service('fastly.api');
+    $this->fastlyApi = \Drupal::service('fastly.api');
   }
 
   /**
@@ -49,6 +56,7 @@ class FastlySettingsForm extends ConfigFormBase {
       '#title' => $this->t('API key'),
       '#default_value' => $api_key,
       '#required' => TRUE,
+      '#description' => 'Company ID for a Fastly account.'
     );
 
     $service_options = $this->getServiceOptions($api_key);
@@ -58,8 +66,15 @@ class FastlySettingsForm extends ConfigFormBase {
         '#title' => $this->t('Service'),
         '#options' => $service_options,
         '#default_value' => !empty($service_options) ? $config->get('service_id') : '',
-        '#description' => t('A Service represents the configuration for your website to be served through Fastly.'),
+        '#description' => $this->t('A Service represents the configuration for your website to be served through Fastly.'),
         '#required' => TRUE,
+      );
+    }
+    else {
+      $form['service_id'] = array(
+        '#type' => 'item',
+        '#title' => $this->t('Service'),
+        '#markup' => $this->t('After entering an API key, click "Save configuration" to see the available services.'),
       );
     }
 
@@ -78,12 +93,17 @@ class FastlySettingsForm extends ConfigFormBase {
     $service_options = $this->getServiceOptions($form_state->getValue('api_key'));
     if (empty($service_id)) {
       if (!($service_options)) {
-        $form_state->setErrorByName('api_key', $this->t('API key is valid but no services exist.'));
+        $form_state->setErrorByName('api_key', $this->t('The API key is valid but no services exist.'));
       }
-      $form_state->setValue('service_id', key($service_options));
+      else {
+        $form_state->setValue('service_id', key($service_options));
+        if (count($service_options) > 1) {
+         drupal_set_message($this->t('Please check that the correct service has been selected and click "Save configuration."'), 'warning');
+        }
+      }
     }
     elseif (!in_array($service_id, array_keys($service_options))) {
-      $form_state->setErrorByName('api_key', $this->t('API key is valid but no services exist.'));
+      $form_state->setErrorByName('service_id', $this->t('The service selected is not valid for the API key.'));
     }
   }
 
@@ -95,7 +115,6 @@ class FastlySettingsForm extends ConfigFormBase {
       ->set('api_key', $form_state->getValue('api_key'))
       ->set('service_id', $form_state->getValue('service_id'))
       ->save();
-
     parent::submitForm($form, $form_state);
   }
 
@@ -113,8 +132,8 @@ class FastlySettingsForm extends ConfigFormBase {
       return [];
     }
     try {
-      $this->api->setApiKey($api_key);
-      $services = $this->api->getServices();
+      $this->fastlyApi->setApiKey($api_key);
+      $services = $this->fastlyApi->getServices();
       $service_options = [];
       foreach ($services as $service) {
         $service_options[$service->id] = $service->name;
@@ -141,8 +160,8 @@ class FastlySettingsForm extends ConfigFormBase {
     if (empty($api_key)) {
       return FALSE;
     }
-    $this->api->setApiKey($api_key);
-    return $this->api->validateApiKey();
+    $this->fastlyApi->setApiKey($api_key);
+    return $this->fastlyApi->validateApiKey();
   }
 
 }

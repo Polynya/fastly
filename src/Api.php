@@ -88,20 +88,22 @@ class Api {
    * Purge whole service.
    */
   public function purgeAll() {
-    try {
-      $response = $this->query('service/' . $this->serviceId . '/purge_all', array(), 'POST');
+    if (!empty($this->serviceId)) {
+      try {
+        $response = $this->query('service/' . $this->serviceId . '/purge_all', array(), 'POST');
 
-      $result = $this->json($response);
-      if ($result->status === 'ok') {
-        $this->logger->info('Successfully purged all on Fastly.');
+        $result = $this->json($response);
+        if ($result->status === 'ok') {
+          $this->logger->info('Successfully purged all on Fastly.');
+        }
+        else {
+          $this->logger->critical('Unable to purge all on Fastly. Response status: %status.', [
+            '%status' => $result['status'],
+          ]);
+        }
+      } catch (RequestException $e) {
+        $this->logger->critical($e->getMessage());
       }
-      else {
-        $this->logger->critical('Unable to purge all on Fastly. Response status: %status.', [
-          '%status' => $result['status'],
-        ]);
-      }
-    } catch (RequestException $e) {
-      $this->logger->critical($e->getMessage());
     }
   }
 
@@ -134,28 +136,30 @@ class Api {
    *   A Surrogate Key value; in the case of Drupal: a cache tag.
    */
   public function purgeKey($key) {
-    try {
-      $response = $this->query('service/' . $this->serviceId . '/purge/' . $key, [], 'POST');
+    if (!empty($this->serviceId)) {
+      try {
+        $response = $this->query('service/' . $this->serviceId . '/purge/' . $key, [], 'POST');
 
-      $result = $this->json($response);
-      if ($result->status === 'ok') {
-        $this->logger->info('Successfully purged the key %key. Purge ID: %id.', [
-          '%key' => $key,
-          '%id' => $result->id,
-        ]);
+        $result = $this->json($response);
+        if ($result->status === 'ok') {
+          $this->logger->info('Successfully purged the key %key. Purge ID: %id.', [
+            '%key' => $key,
+            '%id' => $result->id,
+          ]);
+        }
+        else {
+          $this->logger->critical('Unable to purge the key %key was purged from Fastly. Response status: %status. Purge ID: %id.', [
+            '%key' => $key,
+            '%status' => $result->status,
+            '%id' => $result->id,
+          ]);
+        }
+      } catch (RequestException $e) {
+        $this->logger->critical($e->getMessage());
       }
-      else {
-        $this->logger->critical('Unable to purge the key %key was purged from Fastly. Response status: %status. Purge ID: %id.', [
-          '%key' => $key,
-          '%status' => $result->status,
-          '%id' => $result->id,
-        ]);
-      }
-    }
-    catch (RequestException $e) {
-      $this->logger->critical($e->getMessage());
     }
   }
+
 
   /**
    * Performs http queries to Fastly API server.
