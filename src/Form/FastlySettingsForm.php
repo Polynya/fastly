@@ -9,7 +9,6 @@ namespace Drupal\fastly\Form;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 
-
 /**
  * Defines a form to configure module settings.
  */
@@ -56,7 +55,7 @@ class FastlySettingsForm extends ConfigFormBase {
       '#title' => $this->t('API key'),
       '#default_value' => $api_key,
       '#required' => TRUE,
-      '#description' => 'Company ID for a Fastly account.'
+      '#description' => 'Company ID for a Fastly account.',
     );
 
     $service_options = $this->getServiceOptions($api_key);
@@ -98,7 +97,7 @@ class FastlySettingsForm extends ConfigFormBase {
       else {
         $form_state->setValue('service_id', key($service_options));
         if (count($service_options) > 1) {
-         drupal_set_message($this->t('Please check that the correct service has been selected and click "Save configuration."'), 'warning');
+          drupal_set_message($this->t('Please check that the correct service has been selected and click "Save configuration."'), 'warning');
         }
       }
     }

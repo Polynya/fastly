@@ -71,7 +71,8 @@ class Api {
       }
       $json = $this->json($response);
       return !empty($json->owner_id);
-    } catch (\Exception $e) {
+    }
+    catch (\Exception $e) {
       return FALSE;
     }
   }
@@ -101,7 +102,8 @@ class Api {
             '%status' => $result['status'],
           ]);
         }
-      } catch (RequestException $e) {
+      }
+      catch (RequestException $e) {
         $this->logger->critical($e->getMessage());
       }
     }
@@ -154,12 +156,12 @@ class Api {
             '%id' => $result->id,
           ]);
         }
-      } catch (RequestException $e) {
+      }
+      catch (RequestException $e) {
         $this->logger->critical($e->getMessage());
       }
     }
   }
-
 
   /**
    * Performs http queries to Fastly API server.
